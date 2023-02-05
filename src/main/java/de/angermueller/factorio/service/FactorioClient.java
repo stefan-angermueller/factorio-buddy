@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public class FactorioClient {
@@ -33,6 +34,7 @@ public class FactorioClient {
         }
         final String script = out.toString(StandardCharsets.UTF_8).replace("collect_metrics", functionName);
         sendCommand("/sc " + script);
+        scriptLoaded = true;
     }
 
     protected String sendCommand(String command) throws IOException {
@@ -65,8 +67,8 @@ public class FactorioClient {
             return "CollectionResult{" +
                     "paused=" + paused +
                     ", gameTick=" + gameTick +
-                    ", itemsConsumed=" + itemsConsumed +
-                    ", itemsProduced=" + itemsProduced +
+                    ", itemsConsumed=" + Optional.ofNullable(itemsConsumed).map(m -> "<" + m.size() + " pairs>").orElse("null") +
+                    ", itemsProduced=" + Optional.ofNullable(itemsProduced).map(m -> "<" + m.size() + " pairs>").orElse("null") +
                     '}';
         }
     }
