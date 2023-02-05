@@ -113,6 +113,12 @@ public class RCONClientImpl implements Closeable, RCONClient {
 
         @Override
         public String toString() {
+            String body;
+            if(this.body.length() > 61) {
+                body = this.body.substring(0, 61) + "... (" + this.body.length() + " chars)";
+            } else {
+                body = this.body;
+            }
             return "RCONPackage{" +
                     "id=" + id +
                     ", type=" + type +

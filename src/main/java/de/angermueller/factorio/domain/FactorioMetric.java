@@ -31,7 +31,7 @@ public class FactorioMetric implements Comparable<FactorioMetric> {
     public String toString() {
         return "FactorioMetric{" +
                 "gameTick=" + gameTick +
-                ", data=" + data +
+                ", data=<" + data.size() + " pairs>" +
                 '}';
     }
 }
