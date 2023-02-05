@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <script type="application/javascript">
+        let ws;
+        const chartData = {};
+        const RESOLUTIONS = {
+            seconds: 60,
+            ten_seconds: 10*60,
+            minutes: 60*60,
+            ten_minutes: 10*60*60
+        };
+        const TIMESTAMP_SCALE = 5.0;
+        const RESOLUTION = 'ten_seconds';
+
+        function connect() {
+            ws = new WebSocket('ws://' + window.location.host + '/metrics');
+            ws.onmessage = function (e) {
+                appendToChart(e.data);
+            }
+            ws.onopen = function() {
+                subscribeMetrics();
+            }
+        }
+
+        function appendToChart(data) {
+            data = JSON.parse(data);
+            if(!(data.stream in chartData)) {
+                chartData[data.stream] = {'_ts':[]};
+            }
+            for(const entry of data.data) {
+                for(const key in entry.values) {
+                    if(!(key in chartData[data.stream])) {
+                        chartData[data.stream][key] = [];
+                    }
+                    chartData[data.stream][key].push(entry.values[key]);
+                    while(chartData[data.stream][key].length > (1400 / TIMESTAMP_SCALE)) {
+                        chartData[data.stream][key].shift();
+                    }
+                }
+                chartData[data.stream]['_ts'].push(entry.gameTick);
+                while(chartData[data.stream]['_ts'].length > (1400 / TIMESTAMP_SCALE)) {
+                    chartData[data.stream]['_ts'].shift();
+                }
+            }
+            console.log(chartData);
+            redraw(data.stream, data.resolution);
+        }
+
+        function redraw(chartId, resolution) {
+            const data = chartData[chartId];
+            const chart = document.getElementById(chartId);
+            let lines = chart.getElementsByClassName("lines")[0];
+            lines.remove();
+            lines = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            lines.setAttribute("class", "lines");
+            chart.append(lines);
+            let valMax = Number.MIN_VALUE, valMin = Number.MAX_VALUE, tsMin = Number.MAX_VALUE, tsMax = Number.MIN_VALUE;
+            for(const lineId in data) {
+                if(lineId !== '_ts') {
+                    const lineData = data[lineId];
+                    for (let i = 0; i < lineData.length; i++) {
+                        if(i > 0) {
+                            const currentValue = lineData[i];
+                            const prevValue = lineData[i-1];
+                            const value = currentValue - prevValue;
+                            valMax = Math.max(valMax, value);
+                            valMin = Math.min(valMin, value);
+                        }
+                    }
+                }
+            }
+            for (const value of data['_ts']) {
+                tsMax = Math.max(tsMax, value);
+                tsMin = Math.min(tsMin, value);
+            }
+            //const scaleTs = (tsMax - tsMin) / 1400.0;
+            const scaleTs = RESOLUTIONS[resolution] / TIMESTAMP_SCALE;
+            const scaleValue = (valMax - valMin) / 800.0;
+            const ul = document.getElementById("lineHighlight");
+            if(scaleTs > 0) {
+                for (const lineId in data) {
+                    if (lineId !== '_ts') {
+                        const lineData = data[lineId];
+                        const points = [];
+                        for (let i = 0; i < lineData.length; i++) {
+                            if(i > 0) {
+                                const ts = data['_ts'][i] - tsMin;
+                                const currentValue = lineData[i];
+                                const prevValue = lineData[i-1];
+                                const value = currentValue - prevValue - valMin;
+                                points.push(Math.round(ts / scaleTs + 100) + ',' + Math.round(value / scaleValue));
+                            }
+                        }
+                        const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                        polyline.setAttribute('fill', 'none');
+                        polyline.setAttribute('id', 'line-' + lineId);
+                        polyline.setAttribute('points', points.join(' '));
+                        // Make sure the selector exists
+                        let inputHighlightLineId = document.getElementById('highlight-' + lineId);
+                        if(!inputHighlightLineId) {
+                            const li = document.createElement('li');
+                            inputHighlightLineId = document.createElement('input');
+                            inputHighlightLineId.setAttribute('type', 'checkbox');
+                            const span = document.createElement('span');
+                            span.innerText = lineId;
+                            span.setAttribute('style', 'color:' + getColor(lineId, 50));
+                            inputHighlightLineId.setAttribute('id', 'highlight-' + lineId);
+                            inputHighlightLineId.onclick = function() {
+                                const polyline = document.getElementById('line-' + lineId);
+                                const color = inputHighlightLineId.checked ? getColor(lineId, 100) : getColor(lineId, 50);
+                                const strokeWidth = inputHighlightLineId.checked ? 3 : 1;
+                                polyline.setAttribute('stroke', color);
+                                polyline.setAttribute('stroke-width', strokeWidth.toString());
+                            };
+                            li.append(inputHighlightLineId);
+                            li.append(span);
+                            ul.append(li);
+                        }
+                        polyline.setAttribute('stroke', inputHighlightLineId.checked ? getColor(lineId, 100) : getColor(lineId, 50));
+                        polyline.setAttribute('stroke-width', (inputHighlightLineId.checked ? 3 : 1).toString());
+                        lines.append(polyline);
+                    }
+                }
+                const zeroLine = document.getElementById('zeroLine');
+                zeroLine.setAttribute('y1', Math.round(-valMin / scaleValue).toString())
+                zeroLine.setAttribute('y2', Math.round(-valMin / scaleValue).toString())
+            }
+        }
+
+        function subscribeMetrics() {
+            let messageObject = {
+                action: "subscribe",
+                stream: "resources",
+                resolution: RESOLUTION,
+                maxHistory: Math.round(1400 / TIMESTAMP_SCALE)
+            }
+            ws.send(JSON.stringify(messageObject))
+        }
+
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0, len = str.length; i < len; i++) {
+                let chr = str.charCodeAt(i);
+                hash = (hash << 5) - hash + chr;
+                hash |= 0; // Convert to 32bit integer
+            }
+            return hash;
+        }
+
+        function getColor(string, s = 100) {
+            return hsl2hex(Math.abs(hashCode(string) % 360), s, 50);
+        }
+
+        // h = {0..360}
+        // s = {0..100}
+        // l = {0..100}
+        function hsl2hex(h,s,l) {
+            l /= 100;
+            const a = s * Math.min(l, 1 - l) / 100;
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                return Math.round(255 * color).toString(16).padStart(2, '0');
+            };
+            return `#${f(0)}${f(8)}${f(4)}`;
+        }
+    </script>
+</head>
+<body onload="connect()">
+    <p>
+        <svg id="resources" width="1500" height="800" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+            <line x1="100" y1="0" x2="100" y2="800" style="stroke:rgb(0,0,0);stroke-width:1" />
+            <line id="zeroLine" x1="100" y1="400" x2="1500" y2="400" style="stroke:rgb(0,0,0);stroke-width:1" />
+            <g class="lines">
+                <!-- Empty -->
+            </g>
+        </svg>
+    </p>
+    <p>
+        <ul id="lineHighlight">
+        </ul>
+    </p>
+</body>
+</html>
