@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Java CI with Maven
+name: Build and publish
 
 on:
   push:
@@ -29,10 +29,6 @@ jobs:
         cache: maven
     - name: Build with Maven
       run: mvn -B package --file pom.xml
-
-    # Optional: Uploads the full dependency graph to GitHub to improve the quality of Dependabot alerts this repository can receive
-    - name: Update dependency graph
-      uses: advanced-security/maven-dependency-submission-action@571e99aab1055c2e71a1e2309b9691de18d6b7d6
       
     - name: Build docker container
       run: docker build --file src/main/docker/Dockerfile --tag angermueller/factorio-buddy:latest --tag angermueller/factorio-buddy:$(grep -e "^.*<version>[^<]*</version>.*\$" pom.xml | head -n 1 | sed "s#^.*<version>\([^<]*\)</version>.*\$#\1#") .
